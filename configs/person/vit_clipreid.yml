@@ -70,7 +70,7 @@ TEST:
 DATASETS:
    NAMES: ('market1501')
    ROOT_DIR: ('/kaggle/input/market-1501/Market-1501-v15.09.15')
- OUTPUT_DIR: '/kaggle/working'
+OUTPUT_DIR: '/kaggle/working'
 
 #   NAMES: ('dukemtmc')
 #   ROOT_DIR: ('')
