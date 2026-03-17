@@ -58,6 +58,11 @@ def w2_gaussian_squared(
     Sigma1 = 0.5 * (Sigma1 + Sigma1.transpose(-1, -2))
     Sigma2 = 0.5 * (Sigma2 + Sigma2.transpose(-1, -2))
 
+    # Add regularization for positive definiteness
+    dim = Sigma1.size(-1)
+    Sigma1 = Sigma1 + eps * torch.eye(dim, device=Sigma1.device, dtype=Sigma1.dtype)
+    Sigma2 = Sigma2 + eps * torch.eye(dim, device=Sigma2.device, dtype=Sigma2.dtype)
+
     sqrt_Sigma2 = _matrix_sqrt(Sigma2, eps=eps)
     inside = sqrt_Sigma2 @ Sigma1 @ sqrt_Sigma2
     sqrt_inside = _matrix_sqrt(inside, eps=eps)
