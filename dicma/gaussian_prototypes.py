@@ -87,6 +87,8 @@ class GaussianPrototypes(nn.Module):
         """
         # Project features into low-dimensional space
         z = self._project(features)
+        # Cast to full precision for numerical stability in covariance computation
+        z = z.float()
         ids = ids.to(torch.long)
         ids_unique, inverse_indices = torch.unique(ids, return_inverse=True)
         M = ids_unique.shape[0]

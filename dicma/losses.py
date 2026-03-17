@@ -13,7 +13,9 @@ import torch.nn.functional as F
 def _matrix_sqrt(mat: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Compute symmetric matrix square-root via eigendecomposition."""
     # mat: (..., d, d)
-    eigenvals, eigenvecs = torch.linalg.eigh(mat)
+    # Ensure full precision for eigendecomposition
+    mat_fp32 = mat.float()
+    eigenvals, eigenvecs = torch.linalg.eigh(mat_fp32)
     # clamp eigenvalues for numerical stability
     eigenvals_clamped = torch.clamp(eigenvals, min=eps)
     sqrt_eig = torch.sqrt(eigenvals_clamped)
@@ -45,6 +47,12 @@ def w2_gaussian_squared(
 
     diff = mu1 - mu2
     term_mu = torch.sum(diff * diff, dim=-1)
+
+    # Cast to full precision for numerical stability
+    mu1 = mu1.float()
+    Sigma1 = Sigma1.float()
+    mu2 = mu2.float()
+    Sigma2 = Sigma2.float()
 
     # Ensure symmetric PSD
     Sigma1 = 0.5 * (Sigma1 + Sigma1.transpose(-1, -2))
