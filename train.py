@@ -28,6 +28,14 @@ if __name__ == '__main__':
         "--config_file", default="configs/person/vit_base.yml", help="path to config file", type=str
     )
 
+    parser.add_argument("--use_dicma", action="store_true", help="Enable DiCMA losses")
+    parser.add_argument("--dicma_alpha", type=float, default=None, help="W2 loss weight")
+    parser.add_argument("--dicma_beta", type=float, default=None, help="Covariance loss weight")
+    parser.add_argument("--dicma_gamma", type=float, default=None, help="Relational GW loss weight")
+    parser.add_argument("--dicma_rank", type=int, default=None, help="Projected dimension for DiCMA covariance")
+    parser.add_argument("--dicma_ema", type=float, default=None, help="EMA momentum for DiCMA running stats")
+    parser.add_argument("--dicma_use_gw", action="store_true", help="Enable relational-GW loss term")
+
     parser.add_argument("opts", help="Modify config options using the command-line", default=None,
                         nargs=argparse.REMAINDER)
     parser.add_argument("--local_rank", default=0, type=int)
@@ -36,6 +44,23 @@ if __name__ == '__main__':
     if args.config_file != "":
         cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+
+    # CLI overrides for DiCMA
+    if args.use_dicma:
+        cfg.DICMA.ENABLED = True
+    if args.dicma_alpha is not None:
+        cfg.DICMA.ALPHA = args.dicma_alpha
+    if args.dicma_beta is not None:
+        cfg.DICMA.BETA = args.dicma_beta
+    if args.dicma_gamma is not None:
+        cfg.DICMA.GAMMA = args.dicma_gamma
+    if args.dicma_rank is not None:
+        cfg.DICMA.RANK = args.dicma_rank
+    if args.dicma_ema is not None:
+        cfg.DICMA.EMA_MOMENTUM = args.dicma_ema
+    if args.dicma_use_gw:
+        cfg.DICMA.USE_GW = True
+
     cfg.freeze()
 
     set_seed(cfg.SOLVER.SEED)
@@ -66,9 +91,35 @@ if __name__ == '__main__':
 
     model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num = view_num)
 
+    # DiCMA Gaussian prototypes (optional)
+    dicma_module = None
+    if cfg.DICMA.ENABLED:
+        from dicma import GaussianPrototypes
+
+        # Choose feature dimension for DiCMA (before BN if available)
+        feat_dim = getattr(model, 'in_planes', None) or getattr(model, 'in_planes_proj', None)
+        if feat_dim is None:
+            feat_dim = 2048
+
+        dicma_module = GaussianPrototypes(
+            num_ids=num_classes,
+            feat_dim=feat_dim,
+            rank=cfg.DICMA.RANK,
+            eps=cfg.DICMA.EPS,
+            ema_momentum=cfg.DICMA.EMA_MOMENTUM,
+            use_relational_gw=cfg.DICMA.USE_GW,
+        )
+        dicma_module.to('cuda')
+
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 
     optimizer, optimizer_center = make_optimizer(cfg, model, center_criterion)
+    if dicma_module is not None:
+        optimizer.add_param_group({
+            "params": dicma_module.parameters(),
+            "lr": cfg.DICMA.LR,
+            "weight_decay": cfg.DICMA.WEIGHT_DECAY,
+        })
 
     scheduler = WarmupMultiStepLR(optimizer, cfg.SOLVER.STEPS, cfg.SOLVER.GAMMA, cfg.SOLVER.WARMUP_FACTOR,
                                   cfg.SOLVER.WARMUP_ITERS, cfg.SOLVER.WARMUP_METHOD)
@@ -83,5 +134,7 @@ if __name__ == '__main__':
         optimizer_center,
         scheduler,
         loss_func,
-        num_query, args.local_rank
+        num_query,
+        args.local_rank,
+        dicma_module=dicma_module,
     )

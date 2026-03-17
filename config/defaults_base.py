@@ -63,6 +63,33 @@ _C.MODEL.SIE_CAMERA = False
 _C.MODEL.SIE_VIEW = False
 
 # -----------------------------------------------------------------------------
+# DiCMA (Distributional Cross-Modal Alignment)
+# -----------------------------------------------------------------------------
+_C.DICMA = CN()
+_C.DICMA.ENABLED = False
+# If True, retains the original classification/metric loss in addition to DiCMA loss.
+_C.DICMA.RETAIN_BASELINE = False
+# Weight for W2 loss term
+_C.DICMA.ALPHA = 1.0
+# Weight for covariance Frobenius loss term
+_C.DICMA.BETA = 0.0
+# Weight for optional GW / relational loss term
+_C.DICMA.GAMMA = 0.0
+# Learning rate for prototype parameters (mu + L)
+_C.DICMA.LR = 3e-4
+_C.DICMA.WEIGHT_DECAY = 0.0
+# Rank / projected dimension for covariance (set to None for full-rank)
+_C.DICMA.RANK = 64
+# Numerical stability epsilon for covariance square-root etc.
+_C.DICMA.EPS = 1e-6
+# EMA momentum for running moment estimators (0=no-update, 1=replace)
+_C.DICMA.EMA_MOMENTUM = 0.01
+# Feature index to use for DiCMA when model returns a list of features
+_C.DICMA.FEAT_KEY = 1
+# Enable optional relational-GW (cheap) term
+_C.DICMA.USE_GW = False
+
+# -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------
 _C.INPUT = CN()

@@ -101,3 +101,10 @@ If you use this code for your research, please cite
 }
 ```
 
+## DiCMA Extension (Wasserstein-based Distribution Alignment)
+
+This repo now includes a DiCMA extension that aligns per-ID image feature distributions with learned Gaussian prototypes using closed-form Wasserstein-2 and covariance matching.
+
+- See `dicma/` for implementation details, tests, an analysis notebook, and experiment scripts.
+- Enable via `DICMA.ENABLED` in config or `--use_dicma` command line flag.
+
