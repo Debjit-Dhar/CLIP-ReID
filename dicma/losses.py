@@ -10,14 +10,17 @@ import torch
 import torch.nn.functional as F
 
 
-def _matrix_sqrt(mat: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def _matrix_sqrt(mat: torch.Tensor, eps: float = 1e-4) -> torch.Tensor:
     """Compute symmetric matrix square-root via eigendecomposition."""
     # mat: (..., d, d)
     # Ensure full precision for eigendecomposition
     mat_fp32 = mat.float()
+    # Add regularization
+    dim = mat_fp32.size(-1)
+    mat_fp32 = mat_fp32 + eps * torch.eye(dim, device=mat_fp32.device, dtype=mat_fp32.dtype)
     eigenvals, eigenvecs = torch.linalg.eigh(mat_fp32)
     # clamp eigenvalues for numerical stability
-    eigenvals_clamped = torch.clamp(eigenvals, min=1e-6)
+    eigenvals_clamped = torch.clamp(eigenvals, min=1e-4)
     sqrt_eig = torch.sqrt(eigenvals_clamped)
     # reconstruct
     return (eigenvecs * sqrt_eig.unsqueeze(-2)) @ eigenvecs.transpose(-1, -2)
@@ -28,7 +31,7 @@ def w2_gaussian_squared(
     Sigma1: torch.Tensor,
     mu2: torch.Tensor,
     Sigma2: torch.Tensor,
-    eps: float = 1e-6,
+    eps: float = 1e-4,
 ) -> torch.Tensor:
     """Compute squared 2-Wasserstein distance between Gaussians.
 

@@ -23,7 +23,7 @@ class GaussianPrototypes(nn.Module):
         num_ids: int,
         feat_dim: int,
         rank: Optional[int] = 64,
-        eps: float = 1e-6,
+        eps: float = 1e-4,
         ema_momentum: float = 0.01,
         use_relational_gw: bool = False,
     ):
@@ -114,9 +114,9 @@ class GaussianPrototypes(nn.Module):
                 centered = zi - mean[i : i + 1]
                 cov[i] = centered.t() @ centered / zi.shape[0]
                 # Add regularization for numerical stability
-                cov[i] = cov[i] + 1e-3 * torch.eye(r, device=cov.device, dtype=cov.dtype)
+                cov[i] = cov[i] + 1e-4 * torch.eye(r, device=cov.device, dtype=cov.dtype)
             else:
-                cov[i] = 1e-3 * torch.eye(r, device=z.device, dtype=z.dtype)
+                cov[i] = 1e-4 * torch.eye(r, device=z.device, dtype=z.dtype)
 
         return ids_unique, mean, cov, counts
 
