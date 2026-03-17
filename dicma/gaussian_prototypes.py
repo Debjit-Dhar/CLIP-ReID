@@ -113,8 +113,10 @@ class GaussianPrototypes(nn.Module):
             if zi.shape[0] > 1:
                 centered = zi - mean[i : i + 1]
                 cov[i] = centered.t() @ centered / zi.shape[0]
+                # Add regularization for numerical stability
+                cov[i] = cov[i] + 1e-4 * torch.eye(r, device=cov.device, dtype=cov.dtype)
             else:
-                cov[i] = torch.zeros(r, r, device=z.device, dtype=z.dtype)
+                cov[i] = 1e-4 * torch.eye(r, device=z.device, dtype=z.dtype)
 
         return ids_unique, mean, cov, counts
 

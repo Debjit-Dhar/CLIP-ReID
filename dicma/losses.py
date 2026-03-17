@@ -17,7 +17,7 @@ def _matrix_sqrt(mat: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     mat_fp32 = mat.float()
     eigenvals, eigenvecs = torch.linalg.eigh(mat_fp32)
     # clamp eigenvalues for numerical stability
-    eigenvals_clamped = torch.clamp(eigenvals, min=eps)
+    eigenvals_clamped = torch.clamp(eigenvals, min=1e-6)
     sqrt_eig = torch.sqrt(eigenvals_clamped)
     # reconstruct
     return (eigenvecs * sqrt_eig.unsqueeze(-2)) @ eigenvecs.transpose(-1, -2)

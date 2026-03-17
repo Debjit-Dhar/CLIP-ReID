@@ -49,7 +49,7 @@ DICMA:
   LR: 0.001
   WEIGHT_DECAY: 0.0
   RANK: 64
-  EPS: 1e-6
+  EPS: 1e-4
   EMA_MOMENTUM: 0.01
   FEAT_KEY: 1
   USE_GW: False
