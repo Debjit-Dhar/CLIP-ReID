@@ -44,6 +44,9 @@ class GaussianPrototypes(nn.Module):
         self.eps = eps
         self.ema_momentum = ema_momentum
         self.use_relational_gw = use_relational_gw
+        self.normalize = True
+        self.repel_lambda = 1e-3
+        self.repel_sigma = 1.0
 
         # Projection from feature space to low-dimensional space for covariance computation.
         if self.rank != self.feat_dim:
@@ -89,6 +92,8 @@ class GaussianPrototypes(nn.Module):
         z = self._project(features)
         # Cast to full precision for numerical stability in covariance computation
         z = z.float()
+        if self.normalize:
+            z = torch.nn.functional.normalize(z, dim=-1)
         ids = ids.to(torch.long)
         ids_unique, inverse_indices = torch.unique(ids, return_inverse=True)
         M = ids_unique.shape[0]
@@ -154,6 +159,8 @@ class GaussianPrototypes(nn.Module):
 
         # Prototype moments for this batch
         proto_mu = self.mu[ids_unique]
+        if self.normalize:
+            proto_mu = torch.nn.functional.normalize(proto_mu, dim=-1)
         proto_cov = self._get_cov_from_L(self.L[ids_unique])
 
         # Compute losses
@@ -177,6 +184,15 @@ class GaussianPrototypes(nn.Module):
             result["gw_loss"] = gw_loss
         else:
             result["gw_loss"] = torch.tensor(0.0, device=features.device)
+
+        # Add repulsion loss
+        all_proto_mu = self.mu
+        if self.normalize:
+            all_proto_mu = torch.nn.functional.normalize(all_proto_mu, dim=-1)
+        pairwise = torch.cdist(all_proto_mu, all_proto_mu, p=2)
+        offdiag = pairwise[~torch.eye(pairwise.size(0), dtype=bool, device=pairwise.device)]
+        repulsion = torch.exp(-offdiag.pow(2) / (2 * self.repel_sigma ** 2)).mean()
+        result["repulsion_loss"] = self.repel_lambda * repulsion
 
         return result
 

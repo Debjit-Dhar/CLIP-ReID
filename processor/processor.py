@@ -41,6 +41,7 @@ def do_train(cfg,
     dicma_w2_meter = AverageMeter() if cfg.DICMA.ENABLED else None
     dicma_cov_meter = AverageMeter() if cfg.DICMA.ENABLED else None
     dicma_gw_meter = AverageMeter() if cfg.DICMA.ENABLED else None
+    dicma_rep_meter = AverageMeter() if cfg.DICMA.ENABLED else None
 
     evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
     scaler = amp.GradScaler()
@@ -59,6 +60,7 @@ def do_train(cfg,
             dicma_w2_meter.reset()
             dicma_cov_meter.reset()
             dicma_gw_meter.reset()
+            dicma_rep_meter.reset()
         evaluator.reset()
 
         scheduler.step()
@@ -93,6 +95,7 @@ def do_train(cfg,
                     dicma_loss = cfg.DICMA.ALPHA * dicma_out.get('w2_loss', 0.0)
                     dicma_loss = dicma_loss + cfg.DICMA.BETA * dicma_out.get('cov_loss', 0.0)
                     dicma_loss = dicma_loss + cfg.DICMA.GAMMA * dicma_out.get('gw_loss', 0.0)
+                    dicma_loss = dicma_loss + dicma_out.get('repulsion_loss', 0.0)
 
                     if cfg.DICMA.RETAIN_BASELINE:
                         loss = baseline_loss + dicma_loss
@@ -122,6 +125,7 @@ def do_train(cfg,
                 dicma_w2_meter.update(dicma_out.get('w2_loss', torch.tensor(0.)).item(), img.shape[0])
                 dicma_cov_meter.update(dicma_out.get('cov_loss', torch.tensor(0.)).item(), img.shape[0])
                 dicma_gw_meter.update(dicma_out.get('gw_loss', torch.tensor(0.)).item(), img.shape[0])
+                dicma_rep_meter.update(dicma_out.get('repulsion_loss', torch.tensor(0.)).item(), img.shape[0])
 
             torch.cuda.synchronize()
             if (n_iter + 1) % log_period == 0:
@@ -129,8 +133,8 @@ def do_train(cfg,
                     epoch, (n_iter + 1), len(train_loader), loss_meter.avg, acc_meter.avg, scheduler.get_lr()[0]
                 )
                 if dicma_module is not None and cfg.DICMA.ENABLED:
-                    log_msg += " | W2: {:.4f}, Cov: {:.4f}, GW: {:.4f}".format(
-                        dicma_w2_meter.avg, dicma_cov_meter.avg, dicma_gw_meter.avg
+                    log_msg += " | W2: {:.4f}, Cov: {:.4f}, GW: {:.4f}, Rep: {:.4f}".format(
+                        dicma_w2_meter.avg, dicma_cov_meter.avg, dicma_gw_meter.avg, dicma_rep_meter.avg
                     )
                 logger.info(log_msg)
 
