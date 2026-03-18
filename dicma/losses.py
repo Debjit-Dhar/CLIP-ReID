@@ -26,6 +26,43 @@ def _matrix_sqrt(mat: torch.Tensor, eps: float = 1e-4) -> torch.Tensor:
     return (eigenvecs * sqrt_eig.unsqueeze(-2)) @ eigenvecs.transpose(-1, -2)
 
 
+def matrix_sqrt_newton_schulz(A: torch.Tensor, num_iters: int = 10, eps: float = 1e-6) -> torch.Tensor:
+    """Robust matrix sqrt via Newton-Schulz iteration (fully differentiable, batched).
+    
+    Args:
+        A: (..., d, d) symmetric PSD matrix
+        num_iters: number of iterations (default 10)
+        eps: regularization epsilon
+        
+    Returns:
+        sqrt(A): (..., d, d)
+    """
+    batch_shape = A.shape[:-2]
+    d = A.shape[-1]
+    
+    # Ensure symmetry
+    A = 0.5 * (A + A.transpose(-2, -1))
+    
+    # Add small eps for PD
+    I = torch.eye(d, device=A.device, dtype=A.dtype).expand(*batch_shape, d, d)
+    A = A + eps * I
+    
+    # Normalize by Frobenius norm
+    normA = torch.norm(A.reshape(*batch_shape, -1), dim=-1, keepdim=True).view(*batch_shape, 1, 1)
+    Y = A / normA
+    Z = I.clone()
+    
+    for _ in range(num_iters):
+        T = 0.5 * (3.0 * I - Z @ Y)
+        Y = Y @ T
+        Z = T @ Z
+    
+    sqrtA = Y * torch.sqrt(normA)
+    # Ensure symmetry
+    sqrtA = 0.5 * (sqrtA + sqrtA.transpose(-2, -1))
+    return sqrtA
+
+
 def w2_gaussian_squared(
     mu1: torch.Tensor,
     Sigma1: torch.Tensor,
@@ -47,32 +84,56 @@ def w2_gaussian_squared(
     Returns:
         (...,) tensor of squared distances.
     """
-
-    diff = mu1 - mu2
-    term_mu = torch.sum(diff * diff, dim=-1)
-
     # Cast to full precision for numerical stability
     mu1 = mu1.float()
     Sigma1 = Sigma1.float()
     mu2 = mu2.float()
     Sigma2 = Sigma2.float()
 
+    diff = mu1 - mu2
+    term_mu = torch.sum(diff * diff, dim=-1)
+
     # Ensure symmetric PSD
     Sigma1 = 0.5 * (Sigma1 + Sigma1.transpose(-1, -2))
     Sigma2 = 0.5 * (Sigma2 + Sigma2.transpose(-1, -2))
 
-    # Add regularization for positive definiteness
-    dim = Sigma1.size(-1)
-    Sigma1 = Sigma1 + eps * torch.eye(dim, device=Sigma1.device, dtype=Sigma1.dtype)
-    Sigma2 = Sigma2 + eps * torch.eye(dim, device=Sigma2.device, dtype=Sigma2.dtype)
+    # Stabilization: shrinkage toward isotropic + diagonal floor
+    def stabilize_cov(S: torch.Tensor, shrink_alpha: float = 0.1) -> torch.Tensor:
+        """Apply shrinkage and regularization to covariance matrix."""
+        # S: (..., d, d)
+        d = S.size(-1)
+        # Compute average trace
+        tr = torch.diagonal(S, dim1=-2, dim2=-1).sum(-1) / d
+        # Shrinkage: (1-alpha)*S + alpha*tr*I
+        I = torch.eye(d, device=S.device, dtype=S.dtype).expand(*S.shape[:-2], d, d)
+        S = (1 - shrink_alpha) * S + shrink_alpha * (tr.view(*tr.shape, 1, 1) * I)
+        # Diagonal floor
+        S = S + eps * I
+        return S
 
-    sqrt_Sigma2 = _matrix_sqrt(Sigma2, eps=eps)
+    Sigma1 = stabilize_cov(Sigma1)
+    Sigma2 = stabilize_cov(Sigma2)
+
+    # Use Newton-Schulz for robust matrix sqrt
+    sqrt_Sigma2 = matrix_sqrt_newton_schulz(Sigma2, num_iters=8, eps=eps)
     inside = sqrt_Sigma2 @ Sigma1 @ sqrt_Sigma2
-    sqrt_inside = _matrix_sqrt(inside, eps=eps)
+    sqrt_inside = matrix_sqrt_newton_schulz(inside, num_iters=8, eps=eps)
 
-    trace_term = torch.diagonal(Sigma1, dim1=-2, dim2=-1).sum(-1) + torch.diagonal(Sigma2, dim1=-2, dim2=-1).sum(-1) - 2 * torch.diagonal(sqrt_inside, dim1=-2, dim2=-1).sum(-1)
+    trace_term = (
+        torch.diagonal(Sigma1, dim1=-2, dim2=-1).sum(-1) 
+        + torch.diagonal(Sigma2, dim1=-2, dim2=-1).sum(-1) 
+        - 2 * torch.diagonal(sqrt_inside, dim1=-2, dim2=-1).sum(-1)
+    )
 
-    return term_mu + trace_term
+    w2sq = term_mu + trace_term
+    
+    # Clamp to prevent negative values from numerical errors
+    if torch.any(w2sq < 0):
+        n_neg = (w2sq < 0).sum().item()
+        print(f"Warning: {n_neg} negative W2 values detected, clamping to 0")
+    w2sq = torch.clamp(w2sq, min=0.0)
+    
+    return w2sq
 
 
 def covariance_frobenius_loss(Sigma1: torch.Tensor, Sigma2: torch.Tensor) -> torch.Tensor:

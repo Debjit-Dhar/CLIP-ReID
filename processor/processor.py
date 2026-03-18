@@ -106,6 +106,12 @@ def do_train(cfg,
 
             scaler.scale(loss).backward()
 
+            # Add gradient clipping to prevent divergence
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            if 'center' in cfg.MODEL.METRIC_LOSS_TYPE:
+                torch.nn.utils.clip_grad_norm_(center_criterion.parameters(), max_norm=5.0)
+
             scaler.step(optimizer)
             scaler.update()
 
