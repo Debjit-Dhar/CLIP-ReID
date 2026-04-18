@@ -44,7 +44,7 @@ def do_train_stage1(cfg,
         for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader_stage1):
             img = img.to(device)
             target = vid.to(device)
-            with amp.autocast(enabled=True):
+            with torch.amp.autocast('cuda', enabled=True):
                 image_feature = model(img, target, get_image = True)
                 for i, img_feat in zip(target, image_feature):
                     labels.append(i)
@@ -72,7 +72,7 @@ def do_train_stage1(cfg,
             
             target = labels_list[b_list]
             image_features = image_features_list[b_list]
-            with amp.autocast(enabled=True):
+            with torch.amp.autocast('cuda', enabled=True):
                 text_features = model(label = target, get_text = True)
             loss_i2t = xent(image_features, text_features, target, target)
             loss_t2i = xent(text_features, image_features, target, target)

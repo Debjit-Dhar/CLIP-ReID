@@ -44,7 +44,9 @@ def make_loss(cfg, num_classes):    # modified by gu
                         ID_LOSS = xent(score, target)
 
                     if isinstance(feat, list):
-                        TRI_LOSS = [triplet(feats, target)[0] for feats in feat[0:]]
+                        # Filter out None values and 3D tensors (patch features for DICMA)
+                        valid_feats = [f for f in feat[0:] if f is not None and f.dim() == 2]
+                        TRI_LOSS = [triplet(feats, target)[0] for feats in valid_feats]
                         TRI_LOSS = sum(TRI_LOSS) 
                     else:   
                         TRI_LOSS = triplet(feat, target)[0]
@@ -64,7 +66,9 @@ def make_loss(cfg, num_classes):    # modified by gu
                         ID_LOSS = F.cross_entropy(score, target)
 
                     if isinstance(feat, list):
-                            TRI_LOSS = [triplet(feats, target)[0] for feats in feat[0:]]
+                            # Filter out None values and 3D tensors (patch features for DICMA)
+                            valid_feats = [f for f in feat[0:] if f is not None and f.dim() == 2]
+                            TRI_LOSS = [triplet(feats, target)[0] for feats in valid_feats]
                             TRI_LOSS = sum(TRI_LOSS)
                     else:
                             TRI_LOSS = triplet(feat, target)[0]

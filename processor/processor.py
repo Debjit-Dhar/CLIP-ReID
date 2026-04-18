@@ -67,7 +67,7 @@ def do_train(cfg,
             dicma_rep_meter.reset()
         evaluator.reset()
 
-        scheduler.step()
+        # scheduler.step()  # Moved to end of epoch
 
         model.train()
         for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader):
@@ -83,7 +83,7 @@ def do_train(cfg,
                 target_view = target_view.to(device)
             else: 
                 target_view = None
-            with amp.autocast(enabled=True):
+            with torch.amp.autocast('cuda', enabled=True):
                 score, feat = model(img, target, cam_label=target_cam, view_label=target_view)
                 baseline_loss = loss_fn(score, feat, target, target_cam)
 
@@ -170,6 +170,9 @@ def do_train(cfg,
         else:
             logger.info("Epoch {} done. Time per batch: {:.3f}[s] Speed: {:.1f}[samples/s]"
                     .format(epoch, time_per_batch, train_loader.batch_size / time_per_batch))
+
+        # Step the scheduler at the end of each epoch
+        scheduler.step()
 
         if epoch % checkpoint_period == 0:
             if cfg.MODEL.DIST_TRAIN:

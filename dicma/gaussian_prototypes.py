@@ -100,8 +100,14 @@ class GaussianPrototypes(nn.Module):
         Args:
             features: (B, feat_dim) or (B, num_patches, feat_dim) for patch features.
             side_info: (B, side_embed_dim) side information like camera/view embeddings.
+
+        Returns:
+            projected features with same shape as input
         """
-        if self.use_overlapping_patches and features.dim() == 3:
+        original_shape = features.shape
+        is_patch_features = self.use_overlapping_patches and features.dim() == 3
+
+        if is_patch_features:
             # features: (B, num_patches, feat_dim)
             B, num_patches, feat_dim = features.shape
             features = features.view(B * num_patches, feat_dim)
@@ -112,12 +118,12 @@ class GaussianPrototypes(nn.Module):
         # Add side embedding if provided
         if self.use_side_embedding and side_info is not None:
             side_embedded = self.side_embed(side_info)
-            if self.use_overlapping_patches and features.dim() == 3:
+            if is_patch_features:
                 # Broadcast side embedding to all patches
                 side_embedded = side_embedded.unsqueeze(1).expand(-1, num_patches, -1).reshape(B * num_patches, -1)
             projected = projected + side_embedded
 
-        if self.use_overlapping_patches and features.dim() == 3:
+        if is_patch_features:
             # Reshape back to (B, num_patches, rank)
             projected = projected.view(B, num_patches, self.rank)
 

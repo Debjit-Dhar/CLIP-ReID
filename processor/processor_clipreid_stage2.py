@@ -69,7 +69,7 @@ def do_train_stage2(cfg,
                 l_list = torch.arange(i*batch, (i+1)* batch)
             else:
                 l_list = torch.arange(i*batch, num_classes)
-            with amp.autocast(enabled=True):
+            with torch.amp.autocast('cuda', enabled=True):
                 text_feature = model(label = l_list, get_text = True)
             text_features.append(text_feature.cpu())
         text_features = torch.cat(text_features, 0).cuda()
@@ -96,7 +96,7 @@ def do_train_stage2(cfg,
                 target_view = target_view.to(device)
             else: 
                 target_view = None
-            with amp.autocast(enabled=True):
+            with torch.amp.autocast('cuda', enabled=True):
                 score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
                 logits = image_features @ text_features.t()
                 loss = loss_fn(score, feat, target, target_cam, logits)
