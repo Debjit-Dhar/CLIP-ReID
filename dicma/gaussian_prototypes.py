@@ -26,6 +26,12 @@ class GaussianPrototypes(nn.Module):
         eps: float = 1e-4,
         ema_momentum: float = 0.01,
         use_relational_gw: bool = False,
+        use_overlapping_patches: bool = False,
+        num_patches: int = 16,
+        patch_size: int = 16,
+        patch_stride: int = 8,
+        use_side_embedding: bool = False,
+        side_embed_dim: int = 128,
     ):
         """Store per-ID Gaussian prototype moments.
 
@@ -36,6 +42,12 @@ class GaussianPrototypes(nn.Module):
             eps: numerical stability constant.
             ema_momentum: momentum for running moment estimators when batch size / per-id samples are low.
             use_relational_gw: whether to compute inexpensive relational-GW term.
+            use_overlapping_patches: whether to use overlapping patches instead of global features.
+            num_patches: number of patches to sample when using overlapping patches.
+            patch_size: size of each patch.
+            patch_stride: stride for overlapping patches.
+            use_side_embedding: whether to use side embeddings (camera/view info).
+            side_embed_dim: dimensionality of side embeddings.
         """
         super().__init__()
         self.num_ids = num_ids
@@ -44,6 +56,12 @@ class GaussianPrototypes(nn.Module):
         self.eps = eps
         self.ema_momentum = ema_momentum
         self.use_relational_gw = use_relational_gw
+        self.use_overlapping_patches = use_overlapping_patches
+        self.num_patches = num_patches
+        self.patch_size = patch_size
+        self.patch_stride = patch_stride
+        self.use_side_embedding = use_side_embedding
+        self.side_embed_dim = side_embed_dim
         self.normalize = True
         self.repel_lambda = 1e-3
         self.repel_sigma = 1.0
@@ -53,6 +71,11 @@ class GaussianPrototypes(nn.Module):
             self.register_buffer("proj_matrix", torch.randn(self.feat_dim, self.rank))
         else:
             self.register_buffer("proj_matrix", torch.eye(self.feat_dim))
+
+        # Side embedding for camera/view information
+        if self.use_side_embedding:
+            self.side_embed = nn.Linear(self.side_embed_dim, self.rank)
+            self.side_embed.apply(self._init_weights)
 
         # Prototype means and covariance factors in projected space
         self.mu = nn.Parameter(torch.zeros(num_ids, self.rank))
@@ -64,10 +87,41 @@ class GaussianPrototypes(nn.Module):
         self.register_buffer("running_mean", torch.zeros(num_ids, self.rank))
         self.register_buffer("running_cov", torch.eye(self.rank).unsqueeze(0).repeat(num_ids, 1, 1))
 
-    def _project(self, features: torch.Tensor) -> torch.Tensor:
-        """Project features into a low-dimensional subspace."""
-        # features: (B, feat_dim)
-        return features @ self.proj_matrix
+    def _init_weights(self, m):
+        """Initialize weights for side embedding."""
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0.0)
+
+    def _project(self, features: torch.Tensor, side_info: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Project features into a low-dimensional subspace.
+
+        Args:
+            features: (B, feat_dim) or (B, num_patches, feat_dim) for patch features.
+            side_info: (B, side_embed_dim) side information like camera/view embeddings.
+        """
+        if self.use_overlapping_patches and features.dim() == 3:
+            # features: (B, num_patches, feat_dim)
+            B, num_patches, feat_dim = features.shape
+            features = features.view(B * num_patches, feat_dim)
+
+        # features: (B, feat_dim) or (B*num_patches, feat_dim)
+        projected = features @ self.proj_matrix
+
+        # Add side embedding if provided
+        if self.use_side_embedding and side_info is not None:
+            side_embedded = self.side_embed(side_info)
+            if self.use_overlapping_patches and features.dim() == 3:
+                # Broadcast side embedding to all patches
+                side_embedded = side_embedded.unsqueeze(1).expand(-1, num_patches, -1).reshape(B * num_patches, -1)
+            projected = projected + side_embedded
+
+        if self.use_overlapping_patches and features.dim() == 3:
+            # Reshape back to (B, num_patches, rank)
+            projected = projected.view(B, num_patches, self.rank)
+
+        return projected
 
     def _get_cov_from_L(self, L: torch.Tensor) -> torch.Tensor:
         """Compute covariance matrix from factor L in projected space."""
@@ -78,9 +132,14 @@ class GaussianPrototypes(nn.Module):
         return cov + self.eps * eye
 
     def _gather_batch_stats(
-        self, features: torch.Tensor, ids: torch.Tensor
+        self, features: torch.Tensor, ids: torch.Tensor, side_info: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute per-ID empirical mean and covariance for the current batch.
+
+        Args:
+            features: (B, feat_dim) or (B, num_patches, feat_dim) for patch features.
+            ids: (B,) integer identity labels.
+            side_info: (B, side_embed_dim) side information.
 
         Returns:
             ids_unique: (M,) unique IDs present in the batch
@@ -89,7 +148,12 @@ class GaussianPrototypes(nn.Module):
             counts: (M,) number of samples per ID
         """
         # Project features into low-dimensional space
-        z = self._project(features)
+        z = self._project(features, side_info)
+
+        if self.use_overlapping_patches and z.dim() == 3:
+            # Aggregate patch features: use mean pooling across patches
+            z = z.mean(dim=1)  # (B, rank)
+
         # Cast to full precision for numerical stability in covariance computation
         z = z.float()
         if self.normalize:
@@ -126,20 +190,22 @@ class GaussianPrototypes(nn.Module):
         self,
         features: torch.Tensor,
         ids: torch.Tensor,
+        side_info: Optional[torch.Tensor] = None,
         batch_minibatch_mode: bool = True,
     ) -> Dict[str, torch.Tensor]:
         """Compute DiCMA losses for a minibatch.
 
         Args:
-            features: (B, feat_dim) image features.
+            features: (B, feat_dim) or (B, num_patches, feat_dim) image features.
             ids: (B,) integer identity labels.
+            side_info: (B, side_embed_dim) side information like camera/view embeddings.
             batch_minibatch_mode: if True, only compute losses for IDs present in the batch.
 
         Returns:
             dict with keys:
                 w2_loss, cov_loss, gw_loss (optional), num_ids, diagnostics
         """
-        ids_unique, mean_batch, cov_batch, counts = self._gather_batch_stats(features, ids)
+        ids_unique, mean_batch, cov_batch, counts = self._gather_batch_stats(features, ids, side_info)
         M = ids_unique.shape[0]
 
         # Update running statistics with batch estimates

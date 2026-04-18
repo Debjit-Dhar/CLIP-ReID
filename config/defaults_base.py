@@ -88,6 +88,22 @@ _C.DICMA.EMA_MOMENTUM = 0.01
 _C.DICMA.FEAT_KEY = 1
 # Enable optional relational-GW (cheap) term
 _C.DICMA.USE_GW = False
+# Use overlapping patches for DiCMA instead of global features
+_C.DICMA.USE_OVERLAPPING_PATCHES = False
+# Number of patches to sample when using overlapping patches
+_C.DICMA.NUM_PATCHES = 16
+# Patch size for overlapping patches
+_C.DICMA.PATCH_SIZE = 16
+# Stride for overlapping patches
+_C.DICMA.PATCH_STRIDE = 8
+# Use side embeddings (camera/view information) in DiCMA
+_C.DICMA.USE_SIDE_EMBEDDING = False
+# Enable reranking during evaluation
+_C.DICMA.USE_RERANK = False
+# Reranking parameters
+_C.DICMA.RERANK_K1 = 20
+_C.DICMA.RERANK_K2 = 6
+_C.DICMA.RERANK_LAMBDA = 0.3
 
 # -----------------------------------------------------------------------------
 # INPUT

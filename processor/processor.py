@@ -43,7 +43,11 @@ def do_train(cfg,
     dicma_gw_meter = AverageMeter() if cfg.DICMA.ENABLED else None
     dicma_rep_meter = AverageMeter() if cfg.DICMA.ENABLED else None
 
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
+    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM,
+                           reranking=cfg.DICMA.USE_RERANK,
+                           rerank_k1=cfg.DICMA.RERANK_K1,
+                           rerank_k2=cfg.DICMA.RERANK_K2,
+                           rerank_lambda=cfg.DICMA.RERANK_LAMBDA)
     scaler = amp.GradScaler()
     
     # train
@@ -87,11 +91,26 @@ def do_train(cfg,
                     # Select feature tensor for DiCMA
                     dicma_feat = feat
                     if isinstance(feat, (list, tuple)):
-                        key = getattr(cfg.DICMA, 'FEAT_KEY', 1)
-                        if isinstance(key, int) and 0 <= key < len(feat):
-                            dicma_feat = feat[key]
+                        if cfg.DICMA.USE_OVERLAPPING_PATCHES:
+                            # Use patch features (index 3) for overlapping patches
+                            dicma_feat = feat[3] if len(feat) > 3 and feat[3] is not None else feat[1]
+                        else:
+                            key = getattr(cfg.DICMA, 'FEAT_KEY', 1)
+                            if isinstance(key, int) and 0 <= key < len(feat):
+                                dicma_feat = feat[key]
 
-                    dicma_out = dicma_module(dicma_feat, target)
+                    # Prepare side information for DICMA
+                    side_info = None
+                    if cfg.DICMA.USE_SIDE_EMBEDDING:
+                        side_info_list = []
+                        if target_cam is not None:
+                            side_info_list.append(target_cam.unsqueeze(-1).float())
+                        if target_view is not None:
+                            side_info_list.append(target_view.unsqueeze(-1).float())
+                        if side_info_list:
+                            side_info = torch.cat(side_info_list, dim=-1)
+
+                    dicma_out = dicma_module(dicma_feat, target, side_info)
                     dicma_loss = cfg.DICMA.ALPHA * dicma_out.get('w2_loss', 0.0)
                     dicma_loss = dicma_loss + cfg.DICMA.BETA * dicma_out.get('cov_loss', 0.0)
                     dicma_loss = dicma_loss + cfg.DICMA.GAMMA * dicma_out.get('gw_loss', 0.0)
@@ -219,7 +238,11 @@ def do_inference(cfg,
     logger = logging.getLogger("transreid.test")
     logger.info("Enter inferencing")
 
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
+    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM,
+                           reranking=cfg.DICMA.USE_RERANK,
+                           rerank_k1=cfg.DICMA.RERANK_K1,
+                           rerank_k2=cfg.DICMA.RERANK_K2,
+                           rerank_lambda=cfg.DICMA.RERANK_LAMBDA)
 
     evaluator.reset()
 

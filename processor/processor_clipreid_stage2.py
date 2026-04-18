@@ -43,7 +43,11 @@ def do_train_stage2(cfg,
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
 
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
+    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM,
+                           reranking=cfg.DICMA.USE_RERANK,
+                           rerank_k1=cfg.DICMA.RERANK_K1,
+                           rerank_k2=cfg.DICMA.RERANK_K2,
+                           rerank_lambda=cfg.DICMA.RERANK_LAMBDA)
     scaler = amp.GradScaler()
     xent = SupConLoss(device)
     
@@ -194,7 +198,11 @@ def do_inference(cfg,
     logger = logging.getLogger("transreid.test")
     logger.info("Enter inferencing")
 
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
+    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM,
+                           reranking=cfg.DICMA.USE_RERANK,
+                           rerank_k1=cfg.DICMA.RERANK_K1,
+                           rerank_k2=cfg.DICMA.RERANK_K2,
+                           rerank_lambda=cfg.DICMA.RERANK_LAMBDA)
 
     evaluator.reset()
 

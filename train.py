@@ -35,6 +35,15 @@ if __name__ == '__main__':
     parser.add_argument("--dicma_rank", type=int, default=None, help="Projected dimension for DiCMA covariance")
     parser.add_argument("--dicma_ema", type=float, default=None, help="EMA momentum for DiCMA running stats")
     parser.add_argument("--dicma_use_gw", action="store_true", help="Enable relational-GW loss term")
+    parser.add_argument("--dicma_use_overlapping_patches", action="store_true", help="Use overlapping patches for DiCMA")
+    parser.add_argument("--dicma_num_patches", type=int, default=None, help="Number of patches to sample")
+    parser.add_argument("--dicma_patch_size", type=int, default=None, help="Patch size for overlapping patches")
+    parser.add_argument("--dicma_patch_stride", type=int, default=None, help="Stride for overlapping patches")
+    parser.add_argument("--dicma_use_side_embedding", action="store_true", help="Use side embeddings")
+    parser.add_argument("--dicma_use_rerank", action="store_true", help="Enable reranking during evaluation")
+    parser.add_argument("--dicma_rerank_k1", type=int, default=None, help="Reranking k1 parameter")
+    parser.add_argument("--dicma_rerank_k2", type=int, default=None, help="Reranking k2 parameter")
+    parser.add_argument("--dicma_rerank_lambda", type=float, default=None, help="Reranking lambda parameter")
 
     parser.add_argument("opts", help="Modify config options using the command-line", default=None,
                         nargs=argparse.REMAINDER)
@@ -60,6 +69,24 @@ if __name__ == '__main__':
         cfg.DICMA.EMA_MOMENTUM = args.dicma_ema
     if args.dicma_use_gw:
         cfg.DICMA.USE_GW = True
+    if args.dicma_use_overlapping_patches:
+        cfg.DICMA.USE_OVERLAPPING_PATCHES = True
+    if args.dicma_num_patches is not None:
+        cfg.DICMA.NUM_PATCHES = args.dicma_num_patches
+    if args.dicma_patch_size is not None:
+        cfg.DICMA.PATCH_SIZE = args.dicma_patch_size
+    if args.dicma_patch_stride is not None:
+        cfg.DICMA.PATCH_STRIDE = args.dicma_patch_stride
+    if args.dicma_use_side_embedding:
+        cfg.DICMA.USE_SIDE_EMBEDDING = True
+    if args.dicma_use_rerank:
+        cfg.DICMA.USE_RERANK = True
+    if args.dicma_rerank_k1 is not None:
+        cfg.DICMA.RERANK_K1 = args.dicma_rerank_k1
+    if args.dicma_rerank_k2 is not None:
+        cfg.DICMA.RERANK_K2 = args.dicma_rerank_k2
+    if args.dicma_rerank_lambda is not None:
+        cfg.DICMA.RERANK_LAMBDA = args.dicma_rerank_lambda
 
     cfg.freeze()
 
@@ -101,6 +128,15 @@ if __name__ == '__main__':
         if feat_dim is None:
             feat_dim = 2048
 
+        # Calculate side embedding dimension
+        side_embed_dim = 0
+        if cfg.MODEL.SIE_CAMERA:
+            side_embed_dim += 1
+        if cfg.MODEL.SIE_VIEW:
+            side_embed_dim += 1
+        if side_embed_dim == 0:
+            side_embed_dim = 2  # default fallback
+
         dicma_module = GaussianPrototypes(
             num_ids=num_classes,
             feat_dim=feat_dim,
@@ -108,6 +144,12 @@ if __name__ == '__main__':
             eps=cfg.DICMA.EPS,
             ema_momentum=cfg.DICMA.EMA_MOMENTUM,
             use_relational_gw=cfg.DICMA.USE_GW,
+            use_overlapping_patches=cfg.DICMA.USE_OVERLAPPING_PATCHES,
+            num_patches=cfg.DICMA.NUM_PATCHES,
+            patch_size=cfg.DICMA.PATCH_SIZE,
+            patch_stride=cfg.DICMA.PATCH_STRIDE,
+            use_side_embedding=cfg.DICMA.USE_SIDE_EMBEDDING,
+            side_embed_dim=side_embed_dim,
         )
         dicma_module.to('cuda')
 
